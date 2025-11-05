@@ -193,7 +193,6 @@ void print_final_stats(char *host) {
            transmitted, received,
            transmitted > 0 ? 100.0 * (transmitted - received) / transmitted : 0.0,
            elapsed);
-
     // Mostrar estadísticas de RTT si hubo respuestas
     if (received > 0) {
         double avg = rtt_sum / received; // Promedio
@@ -205,23 +204,7 @@ void print_final_stats(char *host) {
 int main(int argc, char *argv[]) {
     char *host = get_host(argc, argv); // Almacena el nombre del host a hacer ping
     struct addrinfo *res;
-    char *ipstr = get_ipstr(host, &res);
-    /*if (!ipstr) {
-        fprintf(stderr, "Error: no se pudo resolver el host\n");
-        return 1;
-    }*/
-    // // Preparar para resolver el nombre del host
-    // struct addrinfo hints = {0}, *res;
-    // hints.ai_family = AF_INET; // Solo IPv4
-    // // Resolver host → IP
-    // if (getaddrinfo(host, NULL, &hints, &res) != 0) {
-    //     perror("getaddrinfo");
-    //     return 1;
-    // }
-    // // Obtener la IP en formato texto
-    // struct sockaddr_in *addr = (struct sockaddr_in *)res->ai_addr;
-    // char ipstr[INET_ADDRSTRLEN]; // Cadena para guardar la IP
-    // inet_ntop(AF_INET, &(addr->sin_addr), ipstr, sizeof(ipstr)); // Convierte IP a string
+    char *ipstr = get_ipstr(host, &res); // Resuelve el host y obtiene la IP en formato texto
     // Mostrar cabecera inicial del ping
     printf("PING %s (%s) 56(84) bytes of data.\n", host, ipstr);
     // Crear socket raw ICMP
@@ -253,7 +236,6 @@ int main(int argc, char *argv[]) {
             perror("sendto");
             continue;
         }
-
         transmitted++; // Incrementa contador de enviados
 
         // Esperar respuesta
@@ -284,74 +266,17 @@ int main(int argc, char *argv[]) {
         //     else break; // Error grave
         // }
 
+        // Recibir paquete
         int bytes = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&r_addr, &len);
         if (bytes < 0) {
             perror("recvfrom");
             continue;
         }
-        // Recibir paquete
-        /* int bytes = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&r_addr, &len);
-        if (bytes < 0) {
-            if (errno != EINTR) perror("recvfrom");
-            continue;
-        } */
-
-        // char *buf = NULL; // Buffer para recibir respuesta
-        // int bytes = wait_for_response(&buf, sockfd, seq);
-        // if (bytes < 0) {
-        //     if (bytes == -1) continue; // Timeout o interrupción
-        //     else break; // Error grave
-        // }
-        // printf("buf: %s\n", buf); // BORRAR !!!!!!
-
         gettimeofday(&recv_time, NULL); // Tiempo después de recibir
-
-        print_info_package(buf, ipstr, bytes, &send_time, &recv_time);
-
-        // struct iphdr *ip = (struct iphdr *)buf; // Cabecera IP
-        // struct icmphdr *recv_icmp = (struct icmphdr *)(buf + (ip->ihl * 4)); // Cabecera ICMP
-
-        // double rtt = time_diff_ms(&send_time, &recv_time); // RTT calculado
-
-        // // Verificar que sea Echo Reply del mismo proceso
-        // if (recv_icmp->type == ICMP_ECHOREPLY &&
-        //     recv_icmp->un.echo.id == getpid()) {
-
-        //     // Mostrar respuesta
-        //     printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms\n",
-        //            bytes - (ip->ihl * 4), ipstr, recv_icmp->un.echo.sequence, ip->ttl, rtt);
-
-        //     received++;              // Incrementa contador de recibidos
-        //     rtt_min = fmin(rtt_min, rtt); // Actualiza mínimo
-        //     rtt_max = fmax(rtt_max, rtt); // Actualiza máximo
-        //     rtt_sum += rtt;              // Acumula para media
-        //     rtt_sum2 += rtt * rtt;       // Acumula para desviación
-        // } else if (verbose) {
-        //     // Si se recibe otro tipo de ICMP y -v está activo
-        //     printf("ICMP type=%d code=%d received from %s\n",
-        //            recv_icmp->type, recv_icmp->code, ipstr);
-        // }
-
+        print_info_package(buf, ipstr, bytes, &send_time, &recv_time); // Procesar y mostrar info del paquete
         sleep(1); // Espera 1 segundo antes de enviar otro paquete
     }
-    print_final_stats(host);
-
-    // // Mostrar estadísticas cuando se interrumpe con Ctrl+C
-    // double elapsed = time_diff_ms(&start_time, &end_time); // Tiempo total de ejecución
-    // printf("\n--- %s ping statistics ---\n", host);
-    // printf("%d packets transmitted, %d received, %.0f%% packet loss, time %.0fms\n",
-    //        transmitted, received,
-    //        transmitted > 0 ? 100.0 * (transmitted - received) / transmitted : 0.0,
-    //        elapsed);
-
-    // // Mostrar estadísticas de RTT si hubo respuestas
-    // if (received > 0) {
-    //     double avg = rtt_sum / received; // Promedio
-    //     double mdev = sqrt((rtt_sum2 / received) - (avg * avg)); // Desviación estándar
-    //     printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n",
-    //            rtt_min, avg, rtt_max, mdev);
-    // }
-
+    print_final_stats(host); // Mostrar estadísticas finales
     // Liberar recursos
     freeaddrinfo(res); // Libera memoria de resolución DNS
     close(sockfd);     // Cierra el socket
