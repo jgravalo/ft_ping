@@ -28,18 +28,16 @@ double rtt_sum = 0;          // Suma total de RTT para calcular la media
 double rtt_sum2 = 0;         // Suma de RTT al cuadrado para mdev
 struct timeval start_time, end_time; // Tiempos de inicio y fin del programa
 
-typedef struct s_content {
-    char *buf;
-    // char *ipstr;
-    int bytes;
-    // struct timeval *send_time;
-    // struct timeval *recv_time;
-}               t_content;
-
 // Manejador de señal SIGINT (Ctrl+C)
 void sigint_handler(/* int signo */) {
     running = 0; // Detiene el bucle principal
     gettimeofday(&end_time, NULL); // Guarda el tiempo cuando se interrumpe
+}
+
+// Calcula diferencia de tiempo en milisegundos
+double time_diff_ms(struct timeval *start, struct timeval *end) {
+    return (double)(end->tv_sec - start->tv_sec) * 1000.0 + // Diferencia en segundos
+           (double)(end->tv_usec - start->tv_usec) / 1000.0; // Diferencia en microsegundos
 }
 
 // Muestra mensaje de ayuda
@@ -48,6 +46,47 @@ void print_help(const char *progname) {
     printf("Options:\n");
     printf("  -v    Verbose output (show ICMP errors)\n"); // Explicación de -v
     printf("  -?    Display this help message\n");         // Explicación de -?
+}
+
+// Muestra información del paquete recibido
+void print_info_package(char *buf, char *ipstr, int bytes, struct timeval *send_time, struct timeval *recv_time) {
+    struct iphdr *ip = (struct iphdr *)buf; // Cabecera IP
+    struct icmphdr *recv_icmp = (struct icmphdr *)(buf + (ip->ihl * 4)); // Cabecera ICMP
+    double rtt = time_diff_ms(send_time, recv_time); // RTT calculado
+    // Verificar que sea Echo Reply del mismo proceso
+    if (recv_icmp->type == ICMP_ECHOREPLY &&
+        recv_icmp->un.echo.id == getpid()) {
+        // Mostrar respuesta
+        printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms\n",
+            bytes - (ip->ihl * 4), ipstr, recv_icmp->un.echo.sequence, ip->ttl, rtt);
+
+        received++;              // Incrementa contador de recibidos
+        rtt_min = fmin(rtt_min, rtt); // Actualiza mínimo
+        rtt_max = fmax(rtt_max, rtt); // Actualiza máximo
+        rtt_sum += rtt;              // Acumula para media
+        rtt_sum2 += rtt * rtt;       // Acumula para desviación
+    } else if (verbose) {
+        // Si se recibe otro tipo de ICMP y -v está activo
+        printf("ICMP type=%d code=%d received from %s\n",
+            recv_icmp->type, recv_icmp->code, ipstr);
+    }
+}
+
+// Muestra estadísticas finales
+void print_final_stats(char *host) {
+    // Mostrar estadísticas cuando se interrumpe con Ctrl+C
+    double elapsed = time_diff_ms(&start_time, &end_time); // Tiempo total de ejecución
+    printf("\n--- %s ping statistics ---\n", host);
+    printf("%d packets transmitted, %d received, %.0f%% packet loss, time %.0fms\n",
+           transmitted, received,
+           transmitted > 0 ? 100.0 * (transmitted - received) / transmitted : 0.0,
+           elapsed);
+    // Mostrar estadísticas de RTT si hubo respuestas
+    if (received > 0) {
+        double avg = rtt_sum / received; // Promedio
+        double mdev = sqrt((rtt_sum2 / received) - (avg * avg)); // Desviación estándar
+        printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", rtt_min, avg, rtt_max, mdev);
+    }
 }
 
 // Calcula el checksum para ICMP
@@ -70,12 +109,7 @@ unsigned short checksum(void *b, int len) {
     return ~sum; // Devuelve el complemento a uno (operación estándar de checksum)
 }
 
-// Calcula diferencia de tiempo en milisegundos
-double time_diff_ms(struct timeval *start, struct timeval *end) {
-    return (double)(end->tv_sec - start->tv_sec) * 1000.0 + // Diferencia en segundos
-           (double)(end->tv_usec - start->tv_usec) / 1000.0; // Diferencia en microsegundos
-}
-
+// Procesa argumentos y obtiene el host
 char *get_host(int argc, char *argv[]) {
     if (argc < 2) { // Verifica que se haya pasado al menos un argumento
         print_help(argv[0]);
@@ -102,6 +136,7 @@ char *get_host(int argc, char *argv[]) {
     return host;
 }
 
+// Resuelve el host y obtiene la IP en formato texto
 char *get_ipstr(const char *host, struct addrinfo **res) {
     // Preparar para resolver el nombre del host
     struct addrinfo hints = {0};
@@ -155,50 +190,6 @@ int wait_for_response(int sockfd, int seq) {
         return 1; // Timeout: no respuesta
     }
     return 0;
-}
-
-void print_info_package(char *buf, char *ipstr, int bytes, struct timeval *send_time, struct timeval *recv_time) {
-    struct iphdr *ip = (struct iphdr *)buf; // Cabecera IP
-    // printf("buf: %s\n", buf); // BORRAR !!!!!!
-    struct icmphdr *recv_icmp = (struct icmphdr *)(buf + (ip->ihl * 4)); // Cabecera ICMP
-    // printf("SEGFAULT\n");
-
-    double rtt = time_diff_ms(send_time, recv_time); // RTT calculado
-
-    // Verificar que sea Echo Reply del mismo proceso
-    if (recv_icmp->type == ICMP_ECHOREPLY &&
-        recv_icmp->un.echo.id == getpid()) {
-
-        // Mostrar respuesta
-        printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms\n",
-            bytes - (ip->ihl * 4), ipstr, recv_icmp->un.echo.sequence, ip->ttl, rtt);
-
-        received++;              // Incrementa contador de recibidos
-        rtt_min = fmin(rtt_min, rtt); // Actualiza mínimo
-        rtt_max = fmax(rtt_max, rtt); // Actualiza máximo
-        rtt_sum += rtt;              // Acumula para media
-        rtt_sum2 += rtt * rtt;       // Acumula para desviación
-    } else if (verbose) {
-        // Si se recibe otro tipo de ICMP y -v está activo
-        printf("ICMP type=%d code=%d received from %s\n",
-            recv_icmp->type, recv_icmp->code, ipstr);
-    }
-}
-
-void print_final_stats(char *host) {
-    // Mostrar estadísticas cuando se interrumpe con Ctrl+C
-    double elapsed = time_diff_ms(&start_time, &end_time); // Tiempo total de ejecución
-    printf("\n--- %s ping statistics ---\n", host);
-    printf("%d packets transmitted, %d received, %.0f%% packet loss, time %.0fms\n",
-           transmitted, received,
-           transmitted > 0 ? 100.0 * (transmitted - received) / transmitted : 0.0,
-           elapsed);
-    // Mostrar estadísticas de RTT si hubo respuestas
-    if (received > 0) {
-        double avg = rtt_sum / received; // Promedio
-        double mdev = sqrt((rtt_sum2 / received) - (avg * avg)); // Desviación estándar
-        printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", rtt_min, avg, rtt_max, mdev);
-    }
 }
 
 int main(int argc, char *argv[]) {
