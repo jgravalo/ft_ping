@@ -86,6 +86,23 @@ unsigned short checksum(void *b, int len) {
 }
 
 int main(int argc, char *argv[]) {
+    /* 
+    char *host = get_host(argc, argv); // Almacena el nombre del host a hacer ping
+    struct addrinfo *res;
+    char *ipstr = get_ipstr(host, &res); // Resuelve el host y obtiene la IP en formato texto
+    // Mostrar cabecera inicial del ping
+    printf("PING %s (%s) 56(84) bytes of data.\n", host, ipstr);
+    // Crear socket raw ICMP
+    int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (sockfd < 0) {
+        perror("socket");
+        return 1;
+    }
+    signal(SIGINT, sigint_handler); // Captura Ctrl+C
+    gettimeofday(&start_time, NULL); // Guarda tiempo inicial
+    int seq = 0; // Número de secuencia de los paquetes
+    */
+    
     if (argc < 2) { // Verifica que se haya pasado al menos un argumento
         print_help(argv[0]);
         return 1;
