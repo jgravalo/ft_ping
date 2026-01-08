@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
     gettimeofday(&start_time, NULL); // Guarda tiempo inicial
     int seq = 0; // Número de secuencia de los paquetes
     */
-    
+
     if (argc < 2) { // Verifica que se haya pasado al menos un argumento
         print_help(argv[0]);
         return 1;
@@ -181,12 +181,6 @@ int main(int argc, char *argv[]) {
         struct sockaddr_in r_addr; // Dirección origen de la respuesta
         socklen_t len = sizeof(r_addr);
 
-        // Recibir paquete
-        /* int bytes = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&r_addr, &len);
-        if (bytes < 0) {
-            if (errno != EINTR) perror("recvfrom");
-            continue;
-        } */
         fd_set read_fds;
         struct timeval timeout;
         FD_ZERO(&read_fds);
@@ -205,7 +199,8 @@ int main(int argc, char *argv[]) {
                 printf("Request timeout for icmp_seq %d\n", seq - 1);
             continue; // Timeout: no respuesta
         }
-
+        
+        // Recibir paquete
         int bytes = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&r_addr, &len);
         if (bytes < 0) {
             perror("recvfrom");
