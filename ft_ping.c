@@ -130,9 +130,23 @@ char *get_ipstr(const char *host, struct addrinfo **res) {
     return strdup(ipstr);
 }
 
+void echo_reply(struct icmphdr *icmp, const char *ipstr, int bytes, struct iphdr *ip, double rtt) {
+    if (icmp->type == ICMP_ECHOREPLY && icmp->un.echo.id == getpid()) { // si es ICMP y del mismo proceso
+        // Mostrar respuesta
+        printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms\n",
+            bytes - (ip->ihl * 4), ipstr, icmp->un.echo.sequence, ip->ttl, rtt);
+        received++;              // Incrementa contador de recibidos
+        rtt_min = fmin(rtt_min, rtt); // Actualiza mínimo
+        rtt_max = fmax(rtt_max, rtt); // Actualiza máximo
+        rtt_sum += rtt;              // Acumula para media
+        rtt_sum2 += rtt * rtt;       // Acumula para desviación
+    } else if (verbose) { // si esta activo el modo verbose
+        printf("ICMP type=%d code=%d received from %s\n",
+               icmp->type, icmp->code, ipstr);
+    }
+}
 
 int main(int argc, char *argv[]) {
-    
     char *host = get_host(argc, argv); // Almacena el nombre del host a hacer ping
     struct addrinfo *res;
     char *ipstr = get_ipstr(host, &res); // Resuelve el host y obtiene la IP en formato texto
@@ -193,14 +207,13 @@ int main(int argc, char *argv[]) {
                 printf("Request timeout for icmp_seq %d\n", seq - 1);
             continue; // Timeout: no respuesta
         }
-        
+
         // Recibir paquete
         int bytes = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&r_addr, &len);
         if (bytes < 0) {
             perror("recvfrom");
             continue;
         }
-
 
         gettimeofday(&recv_time, NULL); // Tiempo después de recibir
 
@@ -210,27 +223,23 @@ int main(int argc, char *argv[]) {
         double rtt = time_diff_ms(&send_time, &recv_time); // RTT calculado
 
         // Verificar que sea Echo Reply del mismo proceso
-        if (recv_icmp->type == ICMP_ECHOREPLY &&
-            recv_icmp->un.echo.id == getpid()) {
-
+        echo_reply(recv_icmp, ipstr, bytes, ip, rtt);
+        /* if (recv_icmp->type == ICMP_ECHOREPLY && recv_icmp->un.echo.id == getpid()) { // si es ICMP y del mismo proceso
             // Mostrar respuesta
             printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms\n",
-                   bytes - (ip->ihl * 4), ipstr, recv_icmp->un.echo.sequence, ip->ttl, rtt);
-
+                bytes - (ip->ihl * 4), ipstr, recv_icmp->un.echo.sequence, ip->ttl, rtt);
             received++;              // Incrementa contador de recibidos
             rtt_min = fmin(rtt_min, rtt); // Actualiza mínimo
             rtt_max = fmax(rtt_max, rtt); // Actualiza máximo
             rtt_sum += rtt;              // Acumula para media
             rtt_sum2 += rtt * rtt;       // Acumula para desviación
-        } else if (verbose) {
-            // Si se recibe otro tipo de ICMP y -v está activo
+        } else if (verbose) { // si esta activo el modo verbose
             printf("ICMP type=%d code=%d received from %s\n",
                    recv_icmp->type, recv_icmp->code, ipstr);
-        }
+        } */
 
         sleep(1); // Espera 1 segundo antes de enviar otro paquete
     }
-
     print_final_stats(host);
 
     // Liberar recursos
