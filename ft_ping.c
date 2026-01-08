@@ -85,8 +85,54 @@ unsigned short checksum(void *b, int len) {
     return ~sum; // Devuelve el complemento a uno (operación estándar de checksum)
 }
 
+
+// Procesa argumentos y obtiene el host
+char *get_host(int argc, char *argv[]) {
+    if (argc < 2) { // Verifica que se haya pasado al menos un argumento
+        print_help(argv[0]);
+        exit(1);
+    }
+
+    char *host = NULL; // Almacena el nombre del host a hacer ping
+
+    // Procesamiento de argumentos
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "-v") == 0)
+            verbose = 1;         // Activa modo verbose
+        else if (strcmp(argv[i], "-?") == 0) {               // Muestra ayuda
+            print_help(argv[0]);
+            exit(0);
+        } else
+            host = argv[i]; // Guarda el host si no es una opción
+    }
+
+    if (!host) { // Si no se especificó ningún host
+        fprintf(stderr, "Error: no host specified\n");
+        exit(1);
+    }
+    return host;
+}
+
+// Resuelve el host y obtiene la IP en formato texto
+char *get_ipstr(const char *host, struct addrinfo **res) {
+    // Preparar para resolver el nombre del host
+    struct addrinfo hints = {0};
+    hints.ai_family = AF_INET; // Solo IPv4
+    // Resolver host → IP
+    if (getaddrinfo(host, NULL, &hints, res) != 0) {
+        perror("getaddrinfo");
+        exit(1);
+    }
+    // Obtener la IP en formato texto
+    struct sockaddr_in *addr = (struct sockaddr_in *)(*res)->ai_addr;
+    char ipstr[INET_ADDRSTRLEN]; // Cadena para guardar la IP
+    inet_ntop(AF_INET, &(addr->sin_addr), ipstr, sizeof(ipstr)); // Convierte IP a string
+    return strdup(ipstr);
+}
+
+
 int main(int argc, char *argv[]) {
-    /* 
+    
     char *host = get_host(argc, argv); // Almacena el nombre del host a hacer ping
     struct addrinfo *res;
     char *ipstr = get_ipstr(host, &res); // Resuelve el host y obtiene la IP en formato texto
@@ -101,8 +147,8 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, sigint_handler); // Captura Ctrl+C
     gettimeofday(&start_time, NULL); // Guarda tiempo inicial
     int seq = 0; // Número de secuencia de los paquetes
-    */
-
+   
+/* 
     if (argc < 2) { // Verifica que se haya pasado al menos un argumento
         print_help(argv[0]);
         return 1;
@@ -153,6 +199,7 @@ int main(int argc, char *argv[]) {
     gettimeofday(&start_time, NULL); // Guarda tiempo inicial
 
     int seq = 0; // Número de secuencia de los paquetes
+    */
     while (running) {
         // Preparar paquete ICMP
         char packet[PACKET_SIZE] = {0}; // Inicializa el paquete a 0
