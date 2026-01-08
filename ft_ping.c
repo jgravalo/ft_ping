@@ -28,6 +28,12 @@ double rtt_sum = 0;          // Suma total de RTT para calcular la media
 double rtt_sum2 = 0;         // Suma de RTT al cuadrado para mdev
 struct timeval start_time, end_time; // Tiempos de inicio y fin del programa
 
+// Calcula diferencia de tiempo en milisegundos
+double time_diff_ms(struct timeval *start, struct timeval *end) {
+    return (double)(end->tv_sec - start->tv_sec) * 1000.0 + // Diferencia en segundos
+           (double)(end->tv_usec - start->tv_usec) / 1000.0; // Diferencia en microsegundos
+}
+
 // Manejador de señal SIGINT (Ctrl+C)
 void sigint_handler(/* int signo */) {
     running = 0; // Detiene el bucle principal
@@ -40,6 +46,23 @@ void print_help(const char *progname) {
     printf("Options:\n");
     printf("  -v    Verbose output (show ICMP errors)\n"); // Explicación de -v
     printf("  -?    Display this help message\n");         // Explicación de -?
+}
+
+void print_final_stats(const char *host) {
+    double elapsed = time_diff_ms(&start_time, &end_time); // Tiempo total de ejecución
+    printf("\n--- %s ping statistics ---\n", host);
+    printf("%d packets transmitted, %d received, %.0f%% packet loss, time %.0fms\n",
+           transmitted, received,
+           transmitted > 0 ? 100.0 * (transmitted - received) / transmitted : 0.0,
+           elapsed);
+
+    // Mostrar estadísticas de RTT si hubo respuestas
+    if (received > 0) {
+        double avg = rtt_sum / received; // Promedio
+        double mdev = sqrt((rtt_sum2 / received) - (avg * avg)); // Desviación estándar
+        printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n",
+               rtt_min, avg, rtt_max, mdev);
+    }
 }
 
 // Calcula el checksum para ICMP
@@ -60,12 +83,6 @@ unsigned short checksum(void *b, int len) {
     sum += (sum >> 16);
 
     return ~sum; // Devuelve el complemento a uno (operación estándar de checksum)
-}
-
-// Calcula diferencia de tiempo en milisegundos
-double time_diff_ms(struct timeval *start, struct timeval *end) {
-    return (double)(end->tv_sec - start->tv_sec) * 1000.0 + // Diferencia en segundos
-           (double)(end->tv_usec - start->tv_usec) / 1000.0; // Diferencia en microsegundos
 }
 
 int main(int argc, char *argv[]) {
@@ -208,21 +225,7 @@ int main(int argc, char *argv[]) {
         sleep(1); // Espera 1 segundo antes de enviar otro paquete
     }
 
-    // Mostrar estadísticas cuando se interrumpe con Ctrl+C
-    double elapsed = time_diff_ms(&start_time, &end_time); // Tiempo total de ejecución
-    printf("\n--- %s ping statistics ---\n", host);
-    printf("%d packets transmitted, %d received, %.0f%% packet loss, time %.0fms\n",
-           transmitted, received,
-           transmitted > 0 ? 100.0 * (transmitted - received) / transmitted : 0.0,
-           elapsed);
-
-    // Mostrar estadísticas de RTT si hubo respuestas
-    if (received > 0) {
-        double avg = rtt_sum / received; // Promedio
-        double mdev = sqrt((rtt_sum2 / received) - (avg * avg)); // Desviación estándar
-        printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n",
-               rtt_min, avg, rtt_max, mdev);
-    }
+    print_final_stats(host);
 
     // Liberar recursos
     freeaddrinfo(res); // Libera memoria de resolución DNS
