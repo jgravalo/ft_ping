@@ -187,6 +187,7 @@ int main(int argc, char *argv[]) {
         // Preparar paquete ICMP
         char packet[PACKET_SIZE] = {0}; // Inicializa el paquete a 0
         struct icmphdr *icmp = (struct icmphdr *)packet; // Cabecera ICMP
+        
         // Configurar cabecera ICMP
         set_icmp_header(icmp, &seq);
 
