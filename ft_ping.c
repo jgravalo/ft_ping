@@ -130,6 +130,30 @@ char *get_ipstr(const char *host, struct addrinfo **res) {
     return strdup(ipstr);
 }
 
+void set_icmp_header(struct icmphdr *icmp, int *seq) {
+    // Esta función puede ser utilizada para configurar opciones adicionales de ICMP si es necesario
+    icmp->type = ICMP_ECHO;              // Tipo: Echo Request
+    icmp->code = 0;                      // Código: 0
+    icmp->un.echo.id = getpid();         // ID: PID del proceso
+    icmp->un.echo.sequence = (*seq)++;      // Número de secuencia
+    icmp->checksum = checksum(icmp, PACKET_SIZE); // Calcular checksum
+}
+
+int check_ret(int ret, int seq) {
+    if (ret < 0) {
+        if (errno == EINTR)
+            return 1; // Interrupción por Ctrl+C
+        perror("select");
+        return -1;
+    }
+    else if (ret == 0) {
+        if (verbose)
+            printf("Request timeout for icmp_seq %d\n", seq - 1);
+        return 1; // Timeout: no respuesta
+    }
+    return 0;
+}
+
 void echo_reply(struct icmphdr *icmp, const char *ipstr, int bytes, struct iphdr *ip, double rtt) {
     if (icmp->type == ICMP_ECHOREPLY && icmp->un.echo.id == getpid()) { // si es ICMP y del mismo proceso
         // Mostrar respuesta
@@ -150,10 +174,8 @@ int main(int argc, char *argv[]) {
     char *host = get_host(argc, argv); // Almacena el nombre del host a hacer ping
     struct addrinfo *res;
     char *ipstr = get_ipstr(host, &res); // Resuelve el host y obtiene la IP en formato texto
-    // Mostrar cabecera inicial del ping
-    printf("PING %s (%s) 56(84) bytes of data.\n", host, ipstr);
-    // Crear socket raw ICMP
-    int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    printf("PING %s (%s) 56(84) bytes of data.\n", host, ipstr);// Mostrar cabecera inicial del ping
+    int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP); // Crear socket raw ICMP
     if (sockfd < 0) {
         perror("socket");
         return 1;
@@ -165,13 +187,8 @@ int main(int argc, char *argv[]) {
         // Preparar paquete ICMP
         char packet[PACKET_SIZE] = {0}; // Inicializa el paquete a 0
         struct icmphdr *icmp = (struct icmphdr *)packet; // Cabecera ICMP
-
         // Configurar cabecera ICMP
-        icmp->type = ICMP_ECHO;              // Tipo: Echo Request
-        icmp->code = 0;                      // Código: 0
-        icmp->un.echo.id = getpid();         // ID: PID del proceso
-        icmp->un.echo.sequence = seq++;      // Número de secuencia
-        icmp->checksum = checksum(icmp, PACKET_SIZE); // Calcular checksum
+        set_icmp_header(icmp, &seq);
 
         struct timeval send_time, recv_time;
         gettimeofday(&send_time, NULL); // Tiempo antes de enviar
@@ -181,14 +198,12 @@ int main(int argc, char *argv[]) {
             perror("sendto");
             continue;
         }
-
         transmitted++; // Incrementa contador de enviados
 
         // Esperar respuesta
         char buf[1024]; // Buffer para recibir respuesta
         struct sockaddr_in r_addr; // Dirección origen de la respuesta
         socklen_t len = sizeof(r_addr);
-
         fd_set read_fds;
         struct timeval timeout;
         FD_ZERO(&read_fds);
@@ -198,15 +213,9 @@ int main(int argc, char *argv[]) {
 
         // Espera hasta 1 segundo por respuesta
         int ret = select(sockfd + 1, &read_fds, NULL, NULL, &timeout);
-        if (ret < 0) {
-            if (errno == EINTR) continue; // Interrupción por Ctrl+C
-            perror("select");
-            break;
-        } else if (ret == 0) {
-            if (verbose)
-                printf("Request timeout for icmp_seq %d\n", seq - 1);
-            continue; // Timeout: no respuesta
-        }
+        int check = check_ret(ret, seq);
+        if (check > 0) continue;
+        else if (check < 0) break;
 
         // Recibir paquete
         int bytes = recvfrom(sockfd, buf, sizeof(buf), 0, (struct sockaddr *)&r_addr, &len);
@@ -214,30 +223,13 @@ int main(int argc, char *argv[]) {
             perror("recvfrom");
             continue;
         }
-
         gettimeofday(&recv_time, NULL); // Tiempo después de recibir
 
         struct iphdr *ip = (struct iphdr *)buf; // Cabecera IP
         struct icmphdr *recv_icmp = (struct icmphdr *)(buf + (ip->ihl * 4)); // Cabecera ICMP
-
         double rtt = time_diff_ms(&send_time, &recv_time); // RTT calculado
 
-        // Verificar que sea Echo Reply del mismo proceso
-        echo_reply(recv_icmp, ipstr, bytes, ip, rtt);
-        /* if (recv_icmp->type == ICMP_ECHOREPLY && recv_icmp->un.echo.id == getpid()) { // si es ICMP y del mismo proceso
-            // Mostrar respuesta
-            printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms\n",
-                bytes - (ip->ihl * 4), ipstr, recv_icmp->un.echo.sequence, ip->ttl, rtt);
-            received++;              // Incrementa contador de recibidos
-            rtt_min = fmin(rtt_min, rtt); // Actualiza mínimo
-            rtt_max = fmax(rtt_max, rtt); // Actualiza máximo
-            rtt_sum += rtt;              // Acumula para media
-            rtt_sum2 += rtt * rtt;       // Acumula para desviación
-        } else if (verbose) { // si esta activo el modo verbose
-            printf("ICMP type=%d code=%d received from %s\n",
-                   recv_icmp->type, recv_icmp->code, ipstr);
-        } */
-
+        echo_reply(recv_icmp, ipstr, bytes, ip, rtt); // Verificar que sea Echo Reply del mismo proceso
         sleep(1); // Espera 1 segundo antes de enviar otro paquete
     }
     print_final_stats(host);
